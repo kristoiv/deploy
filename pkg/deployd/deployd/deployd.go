@@ -53,13 +53,15 @@ func jsonToResources(json []json.RawMessage) ([]unstructured.Unstructured, error
 }
 
 // Annotate a resource with the deployment correlation ID.
-func addCorrelationID(resource *unstructured.Unstructured, correlationID string) {
-	anno := resource.GetAnnotations()
-	if anno == nil {
-		anno = make(map[string]string)
+func addAnnotations(resource *unstructured.Unstructured, annotations map[string]string) {
+	existingAnnotations := resource.GetAnnotations()
+	if existingAnnotations == nil {
+		existingAnnotations = make(map[string]string)
 	}
-	anno[kubeclient.CorrelationIDAnnotation] = correlationID
-	resource.SetAnnotations(anno)
+	for key, value := range annotations {
+		existingAnnotations[key] = value
+	}
+	resource.SetAnnotations(existingAnnotations)
 }
 
 // Prepare decodes a string of bytes into a deployment request,
@@ -138,7 +140,14 @@ func Run(logger *log.Entry, req *pb.DeploymentRequest, cfg config.Config, kube k
 	errors := make(chan error, len(resources))
 
 	for index, resource := range resources {
-		addCorrelationID(&resource, req.GetDeliveryID())
+		addAnnotations(
+			&resource,
+			map[string]string{
+				kubeclient.CorrelationIDAnnotation: req.GetDeliveryID(),
+				kubeclient.GitRefShaAnnotation:     req.GetGitRefSha(),
+				kubeclient.GitRefAnnotation:        req.GetDeployment().GetRef(),
+			},
+		)
 
 		gvk := resource.GroupVersionKind().String()
 		ns := resource.GetNamespace()
